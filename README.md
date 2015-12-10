@@ -10,6 +10,8 @@ Libraries used in sketch (you should install them):
 
 https://github.com/adafruit/Adafruit_SSD1306
 
+(address should me modified to 3C in H file)
+
 https://github.com/adafruit/Adafruit-GFX-Library
 
 https://github.com/openenergymonitor/EmonLib
