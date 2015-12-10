@@ -10,7 +10,7 @@ Libraries used in sketch (you should install them):
 
 https://github.com/adafruit/Adafruit_SSD1306
 
-(address should me modified to 3C in H file)
+(modify H file: enable #define SSD1306_128_64 and disable #define SSD1306_128_32)
 
 https://github.com/adafruit/Adafruit-GFX-Library
 
