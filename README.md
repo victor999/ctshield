@@ -1,4 +1,4 @@
-# ctshield
+# CtShield
 
 Arduino energy monitor shield sketch for measuring energy consumption.
 
