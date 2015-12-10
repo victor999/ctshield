@@ -1,1 +1,306 @@
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <stdio.h>
+#include "EmonLib.h"                   // Include Emon Library
+#include "ESP8266.h"
 
+#define HOST_PORT   (80)
+
+//define ESP8266 communication port and baudrate
+ESP8266 wifi(Serial2, 115200);
+
+//create display
+#define OLED_RESET 4
+Adafruit_SSD1306 display(OLED_RESET);
+
+#define LOGO16_GLCD_HEIGHT 16 
+#define LOGO16_GLCD_WIDTH  16 
+
+#define NUM_OF_SENSORS 3
+
+EnergyMonitor emon[NUM_OF_SENSORS];                   // Create an energyMonitor instances
+
+//measure data
+struct g_dataToSendType
+{
+  int enabled;
+  float voltage;
+  float irms;
+  float power;
+} g_dataToSend[NUM_OF_SENSORS];
+
+//predefined voltage
+float g_predefinedVoltage = 230.0;
+
+float g_totalPower = 0.0;
+float g_totalCurrent = 0.0;
+float maxCurrent[NUM_OF_SENSORS];
+
+char g_SSID[] = "YOUR_WIFI_SSID";
+char g_PASSWORD[] = "YOUR_WIFI_PASSWORD";
+char inputBuffer[256] = "";
+char workBuffer[50] = "";
+
+unsigned int bootLoopCount = 5;
+#define BOOT_LOOP_FACTOR 40000
+
+//website data
+char g_hostName[256] = "emoncms.org";
+char g_webSite[256] = "http://emoncms.org/emoncms";
+char g_apiKey[256] = "api_key";
+
+
+char g_espStatus[50] = "WIFI OK";
+char g_connectionStatus[50] = "Connection OK";
+char g_sendBuffer[500] = "";
+uint8_t g_rcvBuffer[500] = "";
+char g_sensorString[100] = "";
+
+//counter for loop
+unsigned int g_loopCounter = 0;
+
+static const unsigned char PROGMEM logo16_glcd_bmp[] =
+{ 
+  B00000000, B11000000,
+  B00000001, B11000000,
+  B00000001, B11000000,
+  B00000011, B11100000,
+  B11110011, B11100000,
+  B11111110, B11111000,
+  B01111110, B11111111,
+  B00110011, B10011111,
+  B00011111, B11111100,
+  B00001101, B01110000,
+  B00011011, B10100000,
+  B00111111, B11100000,
+  B00111111, B11110000,
+  B01111100, B11110000,
+  B01110000, B01110000,
+  B00000000, B00110000 };
+
+#if (SSD1306_LCDHEIGHT != 64)
+#error("Height incorrect, please fix Adafruit_SSD1306.h!");
+#endif
+
+void setup()   
+{
+  //////////////////////////////////////////////////////////////
+  //init serial
+  Serial.begin(9600);    
+  //////////////////////////////////////////////////////////////  
+
+  // by default, we'll generate the high voltage from the 3.3v line internally! (neat!)
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // initialize with the I2C addr 0x3C (for the 128x64)
+  // init done
+
+  //////////////////////////////////////////////////////////////
+  // Clear the buffer.
+  display.clearDisplay();
+
+  
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+
+  display.setCursor(0,20);
+  
+  display.println("Starting...");
+  
+  display.display();
+
+  //reset data array
+  for(int i = 0; i < NUM_OF_SENSORS; i ++)
+  {
+    memset(&g_dataToSend[i], 0, sizeof(g_dataToSend[i]));
+    g_dataToSend[i].voltage = g_predefinedVoltage;
+    g_dataToSend[i].enabled = 1;
+    maxCurrent[i] = 30.0;
+  }  
+
+  emon[0].current(0, maxCurrent[0]);             // Current: input pin, calibration.
+  emon[1].current(1, maxCurrent[1]);             // Current: input pin, calibration.
+  emon[2].current(2, maxCurrent[2]);             // Current: input pin, calibration.
+  
+  //////////////////////////////////////////////////////////////  
+  //print firmware version
+  display.clearDisplay();
+  //get the firmware version from wifi board
+  display.println("FW Ver.");
+  display.println(wifi.getVersion().c_str());
+
+  display.display();
+  delay(2000);
+  
+  connectWiFi();
+  
+  delay(2000);
+}
+
+void connectWiFi()
+{
+  //set operation mode
+  display.clearDisplay();
+
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+
+  display.setCursor(0,20);
+  
+  if (wifi.setOprToStationSoftAP()) 
+  {
+    display.println("Set mode success");
+  } 
+  else 
+  {
+    display.println("Error set mode");
+  }
+
+  //join AP
+  if (wifi.joinAP(g_SSID, g_PASSWORD)) 
+  {
+    display.println("Join AP success");
+    //display.println(wifi.getIPStatus().c_str());       
+  } 
+  else 
+  {
+    display.println("Join AP failure");
+  }
+
+  //disable MUX
+  if (wifi.disableMUX()) 
+  {
+    display.println("Single OK");
+  } 
+  else 
+  {
+    display.println("Single err");
+  }
+
+  display.display();
+}
+
+void loop() 
+{
+  //increment counter
+  g_loopCounter ++;
+
+  //calculate values
+
+  g_totalPower = 0.0;
+  g_totalCurrent = 0.0;
+  
+  for(int i = 0; i < NUM_OF_SENSORS; i ++)
+  {
+    if(g_dataToSend[i].enabled)
+    {
+      g_dataToSend[i].irms = emon[i].calcIrms(1480);  // Calculate Irms only
+    }
+    g_dataToSend[i].power = g_dataToSend[i].voltage * g_dataToSend[i].irms;
+    g_totalPower += g_dataToSend[i].power;
+    g_totalCurrent += g_dataToSend[i].irms;
+  }
+  
+  //check the timeout
+  if((g_loopCounter % 20) == 0)
+  { 
+    //check WIFI status
+    checkWifi();   
+    //send data
+    sendData();
+  }
+
+  //display status
+  display.clearDisplay();
+
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+
+  display.setCursor(0,0);
+  display.println(g_espStatus);
+  display.println(g_connectionStatus);
+
+  //display power
+  display.setTextSize(2);
+  display.setTextColor(WHITE);
+
+  display.setCursor(0,25);
+
+  display.print(g_totalPower);
+  display.print(" W\n");
+
+  //display current
+  display.setCursor(0,50);
+
+  display.print(g_totalCurrent);
+  display.print(" A\n");
+
+  display.display();
+}
+
+void sendData()
+{
+  int len = 0;
+  
+  memset(g_sendBuffer, 0, sizeof(g_sendBuffer));
+  memset(g_sensorString, 0, sizeof(g_sensorString));
+  for(int i = 0; i < NUM_OF_SENSORS; i ++)
+  {
+    if(i)
+      len = strlen(g_sensorString);
+    sprintf(g_sensorString + len, "power%d:%d,", i + 1, (int)g_dataToSend[i].power);
+  }
+  sprintf(g_sendBuffer, "GET /emoncms/input/post.json?apikey=%s&node=1&csv=%spower_total:%d HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", g_apiKey, g_sensorString, (int)g_totalPower, g_hostName);
+
+  if(wifi.createTCP(g_hostName, HOST_PORT))
+  {
+    sprintf(g_connectionStatus, "Connection OK");
+    
+    Serial.println("Create TCP OK");
+    
+    Serial.print(g_sendBuffer);
+    Serial.println("\n");
+    
+    wifi.send((const uint8_t*)g_sendBuffer, strlen(g_sendBuffer));
+    
+    len = wifi.recv(g_rcvBuffer, sizeof(g_rcvBuffer), 10000);
+    
+    if(len > 0)
+    {
+      Serial.println("Received");
+      Serial.println((char*)g_rcvBuffer);
+    }
+    
+    if(wifi.releaseTCP())
+    {
+      Serial.println("Release TCP OK");
+    }
+    else
+    {
+      Serial.println("Failed Release TCP");
+    }
+  }
+  else
+  {
+    Serial.println("Failed Create TCP");
+    sprintf(g_connectionStatus, "Connection FAIL"); 
+    
+    connectWiFi();
+  } 
+}
+
+void checkWifi()
+{
+  Serial.println("Check WIFI start");
+  
+  if(!wifi.kick())
+  {
+    Serial.println("WIFI problem - restart");
+    
+    wifi.restart();
+    
+    Serial.println("WIFI restarted");
+  }
+  
+  Serial.println("Check WIFI end");
+}
