@@ -97,8 +97,8 @@ void setup()
   }  
 
   emon[0].current(0, maxCurrent[0]);             // Current: input pin, calibration.
-  emon[1].current(1, maxCurrent[1]);             // Current: input pin, calibration.
-  emon[2].current(2, maxCurrent[2]);             // Current: input pin, calibration.
+  emon[1].current(2, maxCurrent[1]);             // Current: input pin, calibration.
+  emon[2].current(4, maxCurrent[2]);             // Current: input pin, calibration.
   
   //////////////////////////////////////////////////////////////  
   //print firmware version
