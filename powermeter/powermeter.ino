@@ -23,20 +23,19 @@ EnergyMonitor emon[NUM_OF_SENSORS];                   // Create an energyMonitor
 struct g_dataToSendType
 {
   int enabled;
-  float voltage;
   float irms;
-  float power;
+  float realPower;
+  float apparentPower;
+  float powerFactor;
+  float supplyVoltage;
 } g_dataToSend[NUM_OF_SENSORS];
 
-//predefined voltage
-float g_predefinedVoltage = 230.0;
-
-float g_totalPower = 0.0;
+float g_totalPowerReal = 0.0;
 float g_totalCurrent = 0.0;
 float maxCurrent[NUM_OF_SENSORS];
 
-char g_SSID[] = "YOUR_WIFI_SSID";
-char g_PASSWORD[] = "YOUR_WIFI_PASSWORD";
+char g_SSID[] = "WWNNN";
+char g_PASSWORD[] = "0527909477";
 char inputBuffer[256] = "";
 char workBuffer[50] = "";
 
@@ -44,10 +43,9 @@ unsigned int bootLoopCount = 5;
 #define BOOT_LOOP_FACTOR 40000
 
 //website data
-char g_hostName[256] = "emoncms.org";
-char g_webSite[256] = "http://emoncms.org/emoncms";
-char g_apiKey[256] = "api_key";
-
+char g_hostName[256] = "www.cyanpages.com";
+char g_webSite[256] = "http://www.cyanpages.com/emoncms";
+char g_apiKey[256] = "37a3dd5013a2717f5a635d1bcd502b4e";
 
 char g_espStatus[50] = "WIFI OK";
 char g_connectionStatus[50] = "Connection OK";
@@ -91,7 +89,6 @@ void setup()
   for(int i = 0; i < NUM_OF_SENSORS; i ++)
   {
     memset(&g_dataToSend[i], 0, sizeof(g_dataToSend[i]));
-    g_dataToSend[i].voltage = g_predefinedVoltage;
     g_dataToSend[i].enabled = 1;
     maxCurrent[i] = 30.0;
   }  
@@ -99,6 +96,9 @@ void setup()
   emon[0].current(0, maxCurrent[0]);             // Current: input pin, calibration.
   emon[1].current(2, maxCurrent[1]);             // Current: input pin, calibration.
   emon[2].current(4, maxCurrent[2]);             // Current: input pin, calibration.
+  emon[0].voltage(7, 230.0, 1.7);  // Voltage: input pin, calibration, phase_shift
+  emon[1].voltage(7, 230.0, 1.7);  // Voltage: input pin, calibration, phase_shift
+  emon[2].voltage(7, 230.0, 1.7);  // Voltage: input pin, calibration, phase_shift
   
   //////////////////////////////////////////////////////////////  
   //print firmware version
@@ -164,18 +164,22 @@ void loop()
   g_loopCounter ++;
 
   //calculate values
-
-  g_totalPower = 0.0;
+  
+  g_totalPowerReal = 0.0;
   g_totalCurrent = 0.0;
   
   for(int i = 0; i < NUM_OF_SENSORS; i ++)
   {
     if(g_dataToSend[i].enabled)
     {
-      g_dataToSend[i].irms = emon[i].calcIrms(1480);  // Calculate Irms only
-    }
-    g_dataToSend[i].power = g_dataToSend[i].voltage * g_dataToSend[i].irms;
-    g_totalPower += g_dataToSend[i].power;
+      emon[i].calcVI(20,2000);         // Calculate all. No.of half wavelengths (crossings), time-out
+      g_dataToSend[i].realPower       = emon[i].realPower;        //extract Real Power into variable
+      g_dataToSend[i].apparentPower   = emon[i].apparentPower;    //extract Apparent Power into variable
+      g_dataToSend[i].powerFactor     = emon[i].powerFactor;      //extract Power Factor into Variable
+      g_dataToSend[i].supplyVoltage   = emon[i].Vrms;             //extract Vrms into Variable
+      g_dataToSend[i].irms            = emon[i].Irms;             //extract Irms into Variable
+    } 
+    g_totalPowerReal += g_dataToSend[i].realPower;
     g_totalCurrent += g_dataToSend[i].irms;
   }
   
@@ -202,16 +206,52 @@ void loop()
   display.setTextSize(2);
   display.setTextColor(WHITE);
 
-  display.setCursor(0,25);
+  display.setCursor(0,18);
 
-  display.print(g_totalPower);
+  display.print(g_totalPowerReal);
   display.print(" W\n");
+  
+  display.setTextSize(1);
 
   //display current
-  display.setCursor(0,50);
+  display.setCursor(0,35);
 
   display.print(g_totalCurrent);
   display.print(" A\n");
+  
+  //display voltage
+  display.setCursor(0,45);
+  display.print(emon[0].Vrms);
+  display.print(" V ");
+
+  /*
+  //display power
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+
+  display.setCursor(0,20);
+
+  display.print("Est ");
+  display.print(g_dataToSend[0].power);
+  display.print(" W\n");
+  
+  display.print("Real ");
+  display.print(emon[0].realPower);
+  display.print(" W\n");
+  
+  display.print("App ");
+  display.print(emon[0].apparentPower);
+  display.print(" W\n");
+  
+  display.print(emon[0].Vrms);
+  display.print(" V ");
+  
+  display.print(emon[0].Irms);
+  display.print(" A\n");
+
+  display.print(g_dataToSend[0].irms);
+  display.print(" A\n");
+  */
 
   display.display();
 }
@@ -226,9 +266,9 @@ void sendData()
   {
     if(i)
       len = strlen(g_sensorString);
-    sprintf(g_sensorString + len, "power%d:%d,", i + 1, (int)g_dataToSend[i].power);
+    sprintf(g_sensorString + len, "power%d:%d,", i + 1, (int)g_dataToSend[i].realPower);
   }
-  sprintf(g_sendBuffer, "GET /emoncms/input/post.json?apikey=%s&node=1&csv=%spower_total:%d HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", g_apiKey, g_sensorString, (int)g_totalPower, g_hostName);
+  sprintf(g_sendBuffer, "GET /emoncms/input/post.json?apikey=%s&node=1&csv=%spower_total:%d HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", g_apiKey, g_sensorString, (int)g_totalPowerReal, g_hostName);
 
   if(wifi.createTCP(g_hostName, HOST_PORT))
   {
@@ -262,7 +302,9 @@ void sendData()
   {
     Serial.println("Failed Create TCP");
     sprintf(g_connectionStatus, "Connection FAIL"); 
-    
+
+    wifi.restart();
+     
     connectWiFi();
   } 
 }
