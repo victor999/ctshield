@@ -43,9 +43,9 @@ unsigned int bootLoopCount = 5;
 #define BOOT_LOOP_FACTOR 40000
 
 //website data
-char g_hostName[256] = "www.cyanpages.com";
-char g_webSite[256] = "http://www.cyanpages.com/emoncms";
-char g_apiKey[256] = "37a3dd5013a2717f5a635d1bcd502b4e";
+char g_hostName[256] = "emoncms.org";
+char g_webSite[256] = "http://emoncms.org/emoncms";
+char g_apiKey[256] = "api_key";
 
 char g_espStatus[50] = "WIFI OK";
 char g_connectionStatus[50] = "Connection OK";
