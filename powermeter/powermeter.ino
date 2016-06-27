@@ -34,8 +34,8 @@ float g_totalPowerReal = 0.0;
 float g_totalCurrent = 0.0;
 float maxCurrent[NUM_OF_SENSORS];
 
-char g_SSID[] = "WWNNN";
-char g_PASSWORD[] = "0527909477";
+char g_SSID[] = "YOUR_WIFI_SSID";
+char g_PASSWORD[] = "YOUR_WIFI_PASSWORD";
 char inputBuffer[256] = "";
 char workBuffer[50] = "";
 
