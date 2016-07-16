@@ -39,9 +39,6 @@ char g_PASSWORD[] = "YOUR_WIFI_PASSWORD";
 char inputBuffer[256] = "";
 char workBuffer[50] = "";
 
-unsigned int bootLoopCount = 5;
-#define BOOT_LOOP_FACTOR 40000
-
 //website data
 char g_hostName[256] = "emoncms.org";
 char g_webSite[256] = "http://emoncms.org/emoncms";
@@ -125,7 +122,7 @@ void connectWiFi()
 
   display.setCursor(0,20);
   
-  if (wifi.setOprToStationSoftAP()) 
+  if (wifi.setOprToStation()) 
   {
     display.println("Set mode success");
   } 
